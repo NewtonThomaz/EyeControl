@@ -1,0 +1,28 @@
+# Ambiente Virtual Python
+.venv/
+venv/
+ENV/
+env/
+
+# Bytecode e Caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Configurações do usuário e estado local (nunca versionar)
+settings.json
+
+# Modelos binários baixados dinamicamente em tempo de execução
+src/models/*.task
+
+# Histórico pessoal de conversas e capturas de tela privadas
+document/Mensagens Enviadas.md
+document/Mensagens Recebidas.md
+document/Imagens/
+
+# Logs e IDE
+*.log
+.vscode/
+.idea/
