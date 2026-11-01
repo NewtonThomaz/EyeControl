@@ -119,5 +119,5 @@ win32gui.SetWindowPos(
 
 ```
 
-Esse documento cobre 100% dos requisitos combinados: a particularidade das resoluções/tamanhos (21" 1080p e 32" 720p), o mapeamento do mundo físico vertical para o virtual horizontal, a calibração com a cruz e espaço, o offset contínuo com zona morta, o atalho de alternância com congelamento de posição, a liberação da câmera e a operação sem privilégios de administrador respeitando o PowerToys.
+Esse documento cobre 100% dos requisitos combinados: as resoluções e dimensões dos monitores (21" 1080p e 32" 1080p), o mapeamento do mundo físico (vertical ou horizontal) para o virtual, a calibração com a cruz e espaço com filtro de mediana, o offset contínuo com zona morta, o atalho de alternância com congelamento de posição, a liberação da câmera e a operação sem privilégios de administrador respeitando o PowerToys.
 ```
