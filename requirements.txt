@@ -1,6 +1,7 @@
-﻿absl-py==2.5.1
+absl-py==2.5.1
 certifi==2026.10.23
 cffi==2.1.1
+comtypes==1.4.17
 contourpy==1.4.0
 customtkinter==6.0.0
 cycler==0.12.1
@@ -16,6 +17,7 @@ opencv-python==5.0.0.93
 packaging==26.3
 pillow==13.0.0
 pycparser==3.12
+pygrabber==0.2
 pynput==1.8.2
 pyparsing==3.3.3
 python-dateutil==4.0.0

@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
+import tkinter as tk
 from typing import Dict, List, Optional, Tuple
 
 import customtkinter as ctk
 
 from src.calibration_overlay import CalibrationOverlay
+from src.camera_utils import get_available_cameras
 from src.config import MONITOR_LAYOUTS, OFFSET_DIRECTIONS, ConfigManager
 from src.coordinate_mapper import CoordinateMapper
 from src.hotkey_manager import HotkeyManager, format_hotkey_display
 from src.tracker import FaceTracker
-from src.window_manager import WindowInfo, WindowManager
+from src.window_manager import MonitorRect, WindowManager
 
-CAMERA_OPTIONS = ["Câmera 0", "Câmera 1", "Câmera 2", "Câmera 3"]
+LAYOUT_KEY_MAP = {
+    "⬆️ Acima": "Vertical: Secundário Acima",
+    "⬇️ Abaixo": "Vertical: Secundário Abaixo",
+    "➡️ À Direita": "Horizontal: Secundário à Direita",
+    "⬅️ À Esquerda": "Horizontal: Secundário à Esquerda",
+}
+
+LAYOUT_REVERSE_MAP = {v: k for k, v in LAYOUT_KEY_MAP.items()}
 
 
 class EyeControlApp(ctk.CTk):
@@ -28,13 +37,20 @@ class EyeControlApp(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.title("EyeControl — Rastreamento e Sobreposição Multimonitor")
-        self.geometry("580x700")
-        self.minsize(540, 640)
+        self.geometry("620x760")
+        self.minsize(580, 680)
 
         self._windows_map: Dict[str, WindowInfo] = {}
         self._selected_hwnd: Optional[int] = None
         self._active_overlay: Optional[CalibrationOverlay] = None
         self._primary_mon, self._secondary_mon = WindowManager.get_monitors()
+
+        # Descoberta de câmeras com nomes amigáveis (Logi C270, NVIDIA Broadcast, OBS, etc.)
+        self._camera_devices = get_available_cameras()
+        self._camera_label_map: Dict[str, int] = {}
+        for idx, name in self._camera_devices:
+            lbl = f"{name} (Câmera {idx})"
+            self._camera_label_map[lbl] = idx
 
         self._build_ui()
 
@@ -55,6 +71,7 @@ class EyeControlApp(ctk.CTk):
 
         self.refresh_windows_list()
         self._update_calibration_badge()
+        self._draw_monitor_canvas()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------------
@@ -82,7 +99,7 @@ class EyeControlApp(ctk.CTk):
 
         mon_text = (
             f"Mon 1 (Principal): {self._primary_mon.width}×{self._primary_mon.height}  |  "
-            f"Mon 2: {self._secondary_mon.width}×{self._secondary_mon.height}"
+            f"Mon 2 (Secundário): {self._secondary_mon.width}×{self._secondary_mon.height}"
         )
         self.monitors_lbl = ctk.CTkLabel(
             header_frame,
@@ -131,33 +148,66 @@ class EyeControlApp(ctk.CTk):
         )
         self.refresh_btn.grid(row=1, column=1, padx=(0, 14), pady=(0, 12))
 
-        # 2. Seção Disposição Física dos Monitores
+        # 2. Seção Disposição Física dos Monitores (Estilo Windows 11 Display Settings)
         layout_frame = ctk.CTkFrame(main_container, corner_radius=10)
         layout_frame.grid(row=2, column=0, sticky="ew", pady=6)
         layout_frame.grid_columnconfigure(0, weight=1)
 
+        layout_header = ctk.CTkFrame(layout_frame, fg_color="transparent")
+        layout_header.grid(row=0, column=0, sticky="ew", padx=14, pady=(10, 4))
+        layout_header.grid_columnconfigure(0, weight=1)
+
         ctk.CTkLabel(
-            layout_frame,
-            text="2. Disposição Física do Monitor Secundário (2)",
+            layout_header,
+            text="2. Disposição dos Monitores na Mesa",
             font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, sticky="w", padx=14, pady=(10, 2))
+        ).grid(row=0, column=0, sticky="w")
+
+        # Botão Identificar (Estilo Windows 11)
+        self.identify_btn = ctk.CTkButton(
+            layout_header,
+            text="🔍 Identificar",
+            width=100,
+            height=28,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=self._on_identify_clicked,
+        )
+        self.identify_btn.grid(row=0, column=1, sticky="e")
 
         ctk.CTkLabel(
             layout_frame,
-            text="Como o Monitor 2 está posicionado na sua mesa em relação ao Monitor 1:",
+            text="Selecione onde o Monitor 2 está fisicamente posicionado em relação ao Monitor 1:",
             font=ctk.CTkFont(size=12),
             text_color="#94A3B8",
         ).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 6))
 
-        current_layout = str(self.config_mgr.get("monitor_layout", "Vertical: Secundário Acima"))
-        self.layout_dropdown = ctk.CTkOptionMenu(
-            layout_frame,
-            values=MONITOR_LAYOUTS,
-            command=self._on_layout_changed,
-            dynamic_resizing=False,
+        # Canvas visual interativo dos monitores (Estilo Windows 11 Display Settings)
+        canvas_bg_frame = ctk.CTkFrame(layout_frame, fg_color="#18181B", corner_radius=8)
+        canvas_bg_frame.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 8))
+        canvas_bg_frame.grid_columnconfigure(0, weight=1)
+
+        self.monitor_canvas = tk.Canvas(
+            canvas_bg_frame,
+            width=500,
+            height=160,
+            bg="#18181B",
+            highlightthickness=0,
+            bd=0,
         )
-        self.layout_dropdown.set(current_layout)
-        self.layout_dropdown.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
+        self.monitor_canvas.pack(fill="x", expand=True, padx=8, pady=8)
+
+        # Seletor rápido de posição
+        current_layout = str(self.config_mgr.get("monitor_layout", "Vertical: Secundário Acima"))
+        initial_pill = LAYOUT_REVERSE_MAP.get(current_layout, "⬆️ Acima")
+
+        self.layout_seg = ctk.CTkSegmentedButton(
+            layout_frame,
+            values=["⬆️ Acima", "⬇️ Abaixo", "➡️ À Direita", "⬅️ À Esquerda"],
+            command=self._on_layout_pill_selected,
+        )
+        self.layout_seg.set(initial_pill)
+        self.layout_seg.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 12))
 
         # 3. Seção Calibração de 2 Pontos (RF-04 a RF-07)
         cal_frame = ctk.CTkFrame(main_container, corner_radius=10)
@@ -186,46 +236,50 @@ class EyeControlApp(ctk.CTk):
         )
         self.calibrate_btn.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
 
-        # 4. Seção Câmera e Desempenho (RNF-02)
+        # 4. Seção Câmera e Desempenho (Com nomes reais de dispositivos)
         perf_frame = ctk.CTkFrame(main_container, corner_radius=10)
         perf_frame.grid(row=4, column=0, sticky="ew", pady=6)
         perf_frame.grid_columnconfigure(0, weight=1)
-        perf_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
             perf_frame,
             text="4. Câmera e Desempenho",
             font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(10, 6))
+        ).grid(row=0, column=0, sticky="w", padx=14, pady=(10, 6))
 
-        # Seletor de Câmera
-        cam_idx = int(self.config_mgr.get("camera_index", 0))
-        cam_label = f"Câmera {cam_idx}" if 0 <= cam_idx < len(CAMERA_OPTIONS) else CAMERA_OPTIONS[0]
+        # Seletor com Nome Real da Webcam (Logi C270, NVIDIA Broadcast, OBS Virtual, etc.)
         ctk.CTkLabel(
             perf_frame,
-            text="Dispositivo de Webcam:",
+            text="Dispositivo de Vídeo (Webcam):",
             font=ctk.CTkFont(size=12),
             text_color="#CBD5E1",
         ).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 2))
 
+        cam_idx_saved = int(self.config_mgr.get("camera_index", 0))
+        camera_labels = list(self._camera_label_map.keys())
+        default_cam_label = camera_labels[0] if camera_labels else "Webcam Padrão (0)"
+        for lbl, c_idx in self._camera_label_map.items():
+            if c_idx == cam_idx_saved:
+                default_cam_label = lbl
+                break
+
         self.cam_dropdown = ctk.CTkOptionMenu(
             perf_frame,
-            values=CAMERA_OPTIONS,
-            command=self._on_camera_changed,
+            values=camera_labels if camera_labels else [default_cam_label],
+            command=self._on_camera_selected,
             dynamic_resizing=False,
-            width=140,
         )
-        self.cam_dropdown.set(cam_label)
-        self.cam_dropdown.grid(row=2, column=0, sticky="w", padx=14, pady=(0, 10))
+        self.cam_dropdown.set(default_cam_label)
+        self.cam_dropdown.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 10))
 
         # Slider de FPS
         initial_fps = int(self.config_mgr.get("fps", 5))
         self.fps_lbl = ctk.CTkLabel(
             perf_frame,
-            text=f"Amostragem: {initial_fps} FPS ({int(1000 / initial_fps)} ms)",
+            text=f"Taxa de Amostragem: {initial_fps} FPS ({int(1000 / initial_fps)} ms)",
             font=ctk.CTkFont(size=12),
         )
-        self.fps_lbl.grid(row=3, column=0, columnspan=2, sticky="w", padx=14, pady=(4, 2))
+        self.fps_lbl.grid(row=3, column=0, sticky="w", padx=14, pady=(4, 2))
 
         self.fps_slider = ctk.CTkSlider(
             perf_frame,
@@ -235,7 +289,7 @@ class EyeControlApp(ctk.CTk):
             command=self._on_fps_changed,
         )
         self.fps_slider.set(initial_fps)
-        self.fps_slider.grid(row=4, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 12))
+        self.fps_slider.grid(row=4, column=0, sticky="ew", padx=14, pady=(0, 12))
 
         # 5. Seção Deslocamento Periférico (Offset) e Zona Morta (RF-09 a RF-12)
         offset_frame = ctk.CTkFrame(main_container, corner_radius=10)
@@ -354,6 +408,152 @@ class EyeControlApp(ctk.CTk):
         self.camera_status_lbl.grid(row=0, column=1, sticky="e", padx=16, pady=8)
 
     # ------------------------------------------------------------------
+    # Renderizador Visual dos Monitores (Estilo Windows 11 Display Settings)
+    # ------------------------------------------------------------------
+    def _draw_monitor_canvas(self) -> None:
+        """Desenha a representação gráfica dos monitores no canvas."""
+        self.monitor_canvas.delete("all")
+        cw = 500
+        ch = 160
+
+        layout = str(self.config_mgr.get("monitor_layout", "Vertical: Secundário Acima"))
+
+        # Cores idênticas às configurações de tela do Windows 11:
+        # Monitor 1: Rosa/Magenta vibrante do Windows (#E11D48 / #BE185D)
+        # Monitor 2: Cinza escuro elegante (#334155 / #27272A)
+        c1_fill = "#E11D48"
+        c1_outline = "#FB7185"
+        c2_fill = "#27272A"
+        c2_outline = "#52525B"
+
+        bw, bh = 130, 68
+
+        if layout == "Vertical: Secundário Acima":
+            # Monitor 2 no topo, Monitor 1 embaixo
+            m2_x1, m2_y1 = (cw - bw) // 2, 8
+            m2_x2, m2_y2 = m2_x1 + bw, m2_y1 + bh
+            m1_x1, m1_y1 = (cw - bw) // 2, 84
+            m1_x2, m1_y2 = m1_x1 + bw, m1_y1 + bh
+        elif layout == "Vertical: Secundário Abaixo":
+            # Monitor 1 no topo, Monitor 2 embaixo
+            m1_x1, m1_y1 = (cw - bw) // 2, 8
+            m1_x2, m1_y2 = m1_x1 + bw, m1_y1 + bh
+            m2_x1, m2_y1 = (cw - bw) // 2, 84
+            m2_x2, m2_y2 = m2_x1 + bw, m2_y1 + bh
+        elif layout == "Horizontal: Secundário à Direita":
+            # Monitor 1 à esquerda, Monitor 2 à direita (igual ao screenshot do Windows)
+            gap = 14
+            total_w = bw * 2 + gap
+            start_x = (cw - total_w) // 2
+            start_y = (ch - bh) // 2
+            m1_x1, m1_y1 = start_x, start_y
+            m1_x2, m1_y2 = m1_x1 + bw, m1_y1 + bh
+            m2_x1, m2_y1 = m1_x2 + gap, start_y
+            m2_x2, m2_y2 = m2_x1 + bw, m2_y1 + bh
+        else:  # Horizontal: Secundário à Esquerda
+            gap = 14
+            total_w = bw * 2 + gap
+            start_x = (cw - total_w) // 2
+            start_y = (ch - bh) // 2
+            m2_x1, m2_y1 = start_x, start_y
+            m2_x2, m2_y2 = m2_x1 + bw, m2_y1 + bh
+            m1_x1, m1_y1 = m2_x2 + gap, start_y
+            m1_x2, m1_y2 = m1_x1 + bw, m1_y1 + bh
+
+        # Desenha Monitor 1 (Principal)
+        self._draw_monitor_box(
+            m1_x1, m1_y1, m1_x2, m1_y2,
+            number_text="1",
+            title_text="Principal",
+            res_text=f"{self._primary_mon.width}×{self._primary_mon.height}",
+            fill_color=c1_fill,
+            border_color=c1_outline,
+        )
+
+        # Desenha Monitor 2 (Secundário)
+        self._draw_monitor_box(
+            m2_x1, m2_y1, m2_x2, m2_y2,
+            number_text="2",
+            title_text="Secundário",
+            res_text=f"{self._secondary_mon.width}×{self._secondary_mon.height}",
+            fill_color=c2_fill,
+            border_color=c2_outline,
+        )
+
+    def _draw_monitor_box(
+        self,
+        x1: int, y1: int, x2: int, y2: int,
+        number_text: str,
+        title_text: str,
+        res_text: str,
+        fill_color: str,
+        border_color: str,
+    ) -> None:
+        self.monitor_canvas.create_rectangle(
+            x1, y1, x2, y2,
+            fill=fill_color,
+            outline=border_color,
+            width=2,
+        )
+        cx = (x1 + x2) // 2
+        cy = (y1 + y2) // 2
+        self.monitor_canvas.create_text(
+            cx, cy - 8,
+            text=number_text,
+            fill="#FFFFFF",
+            font=("Segoe UI", 20, "bold"),
+        )
+        self.monitor_canvas.create_text(
+            cx, cy + 16,
+            text=f"{title_text} • {res_text}",
+            fill="#E2E8F0",
+            font=("Segoe UI", 9, "bold"),
+        )
+
+    def _on_identify_clicked(self) -> None:
+        """Exibe o número '1' e '2' em cada monitor por 2.5s (Igual ao Windows 11)."""
+        w1 = tk.Toplevel(self)
+        w1.overrideredirect(True)
+        w1.attributes("-topmost", True)
+        w1.attributes("-alpha", 0.92)
+        w1.configure(bg="#E11D48")
+
+        card_w, card_h = 170, 170
+        x1 = self._primary_mon.left + (self._primary_mon.width - card_w) // 2
+        y1 = self._primary_mon.top + (self._primary_mon.height - card_h) // 2
+        w1.geometry(f"{card_w}x{card_h}+{x1}+{y1}")
+        tk.Label(
+            w1, text="1", font=("Segoe UI", 68, "bold"), fg="#FFFFFF", bg="#E11D48"
+        ).pack(expand=True)
+
+        w2 = tk.Toplevel(self)
+        w2.overrideredirect(True)
+        w2.attributes("-topmost", True)
+        w2.attributes("-alpha", 0.92)
+        w2.configure(bg="#27272A")
+
+        x2 = self._secondary_mon.left + (self._secondary_mon.width - card_w) // 2
+        y2 = self._secondary_mon.top + (self._secondary_mon.height - card_h) // 2
+        w2.geometry(f"{card_w}x{card_h}+{x2}+{y2}")
+        tk.Label(
+            w2, text="2", font=("Segoe UI", 68, "bold"), fg="#FFFFFF", bg="#27272A"
+        ).pack(expand=True)
+
+        def _close_overlays() -> None:
+            try:
+                if w1.winfo_exists():
+                    w1.destroy()
+            except Exception:
+                pass
+            try:
+                if w2.winfo_exists():
+                    w2.destroy()
+            except Exception:
+                pass
+
+        self.after(2200, _close_overlays)
+
+    # ------------------------------------------------------------------
     # Eventos da UI (Main Thread)
     # ------------------------------------------------------------------
     def refresh_windows_list(self) -> None:
@@ -361,7 +561,7 @@ class EyeControlApp(ctk.CTk):
         self._primary_mon, self._secondary_mon = WindowManager.get_monitors()
         mon_text = (
             f"Mon 1 (Principal): {self._primary_mon.width}×{self._primary_mon.height}  |  "
-            f"Mon 2: {self._secondary_mon.width}×{self._secondary_mon.height}"
+            f"Mon 2 (Secundário): {self._secondary_mon.width}×{self._secondary_mon.height}"
         )
         self.monitors_lbl.configure(text=mon_text)
 
@@ -393,6 +593,7 @@ class EyeControlApp(ctk.CTk):
 
         self.window_dropdown.set(chosen_label)
         self._on_window_selected(chosen_label)
+        self._draw_monitor_canvas()
 
     def _on_window_selected(self, label: str) -> None:
         winfo = self._windows_map.get(label)
@@ -401,23 +602,22 @@ class EyeControlApp(ctk.CTk):
             self.config_mgr.set("target_window_title", winfo.title)
             self.mapper.reset_state()
 
-    def _on_layout_changed(self, layout: str) -> None:
+    def _on_layout_pill_selected(self, pill_label: str) -> None:
+        layout = LAYOUT_KEY_MAP.get(pill_label, "Vertical: Secundário Acima")
         self.config_mgr.set("monitor_layout", layout)
         self.mapper.reset_state()
+        self._draw_monitor_canvas()
         self._update_calibration_badge()
 
-    def _on_camera_changed(self, cam_label: str) -> None:
-        try:
-            idx = int(cam_label.split()[-1])
-        except Exception:
-            idx = 0
+    def _on_camera_selected(self, camera_label: str) -> None:
+        idx = self._camera_label_map.get(camera_label, 0)
         self.config_mgr.set("camera_index", idx)
         self.tracker.set_camera_index(idx)
 
     def _on_fps_changed(self, value: float) -> None:
         fps = max(1, min(15, int(round(value))))
         self.fps_lbl.configure(
-            text=f"Amostragem: {fps} FPS ({int(1000 / fps)} ms)"
+            text=f"Taxa de Amostragem: {fps} FPS ({int(1000 / fps)} ms)"
         )
         self.tracker.set_fps(fps)
         self.config_mgr.set("fps", fps)
@@ -447,7 +647,6 @@ class EyeControlApp(ctk.CTk):
     def _start_calibration(self) -> None:
         if self._active_overlay is not None:
             return
-        # Pausa o rastreamento de movimentação enquanto calibra os 2 pontos
         self.tracker.set_tracking(False)
         self._sync_toggle_visual(False)
         layout = str(self.config_mgr.get("monitor_layout", "Vertical: Secundário Acima"))
