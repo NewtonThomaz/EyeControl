@@ -95,3 +95,4 @@ O projeto inclui suíte de testes unitários cobrindo o mapeamento geométrico p
 ## 📄 Licença
 
 Distribuído sob a licença MIT. Consulte o arquivo `LICENSE` para mais informações.
+
