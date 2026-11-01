@@ -43,3 +43,4 @@ def ensure_start_menu_shortcut() -> bool:
 if __name__ == "__main__":
     ok = ensure_start_menu_shortcut()
     print("Atalho do Menu Iniciar criado/atualizado:", ok)
+
