@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import tkinter as tk
 from typing import Dict, List, Optional, Tuple
 
