@@ -44,3 +44,4 @@ def get_available_cameras() -> List[Tuple[int, str]]:
 
     # Fallback genérico caso nenhum enumerador responda
     return [(0, "Webcam Principal (0)"), (1, "Câmera Secundária (1)")]
+

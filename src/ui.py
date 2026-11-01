@@ -40,6 +40,16 @@ class EyeControlApp(ctk.CTk):
         self.geometry("620x760")
         self.minsize(580, 680)
 
+        # Configura o ícone da aplicação na barra de título e barra de tarefas
+        self._assets_dir = Path(__file__).resolve().parent / "assets"
+        self._icon_ico_path = self._assets_dir / "icon.ico"
+        self._icon_png_path = self._assets_dir / "icon.png"
+        if self._icon_ico_path.exists():
+            try:
+                self.iconbitmap(str(self._icon_ico_path))
+            except Exception:
+                pass
+
         self._windows_map: Dict[str, WindowInfo] = {}
         self._selected_hwnd: Optional[int] = None
         self._active_overlay: Optional[CalibrationOverlay] = None
@@ -90,12 +100,29 @@ class EyeControlApp(ctk.CTk):
         header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         header_frame.grid_columnconfigure(0, weight=1)
 
+        title_box = ctk.CTkFrame(header_frame, fg_color="transparent")
+        title_box.grid(row=0, column=0, sticky="w", padx=14, pady=(10, 2))
+
+        if self._icon_png_path.exists():
+            try:
+                from PIL import Image
+
+                self._logo_ctk_img = ctk.CTkImage(
+                    light_image=Image.open(self._icon_png_path),
+                    dark_image=Image.open(self._icon_png_path),
+                    size=(28, 28),
+                )
+                logo_lbl = ctk.CTkLabel(title_box, image=self._logo_ctk_img, text="")
+                logo_lbl.pack(side="left", padx=(0, 8))
+            except Exception:
+                pass
+
         title_lbl = ctk.CTkLabel(
-            header_frame,
+            title_box,
             text="EyeControl",
             font=ctk.CTkFont(size=20, weight="bold"),
         )
-        title_lbl.grid(row=0, column=0, sticky="w", padx=14, pady=(10, 2))
+        title_lbl.pack(side="left")
 
         mon_text = (
             f"Mon 1 (Principal): {self._primary_mon.width}×{self._primary_mon.height}  |  "
